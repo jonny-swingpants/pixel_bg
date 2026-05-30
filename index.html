@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pixel BG</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      color: #ccc;
+    }
+
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Panel ── */
+    #panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 280px;
+      height: 100vh;
+      background: rgba(12, 12, 16, 0.92);
+      backdrop-filter: blur(12px);
+      border-left: 1px solid rgba(255,255,255,0.07);
+      transform: translateX(0);
+      transition: transform 0.25s ease;
+      overflow-y: auto;
+      z-index: 10;
+    }
+
+    #panel.collapsed {
+      transform: translateX(280px);
+    }
+
+    #toggle-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 20;
+      width: 36px;
+      height: 36px;
+      background: rgba(12,12,16,0.9);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      color: #aaa;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    #toggle-btn:hover { background: rgba(40,40,52,0.95); }
+
+    .panel-inner {
+      padding: 52px 16px 24px;
+    }
+
+    .section {
+      margin-bottom: 20px;
+    }
+
+    .section-title {
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: #555;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .row label {
+      flex: 0 0 90px;
+      color: #888;
+      font-size: 12px;
+    }
+
+    .row input[type=range] {
+      flex: 1;
+      accent-color: #7c6ff7;
+    }
+
+    .row .val {
+      flex: 0 0 38px;
+      text-align: right;
+      color: #666;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .row input[type=color] {
+      width: 32px;
+      height: 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      background: none;
+      padding: 0;
+    }
+
+    select {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+      color: #ccc;
+      padding: 4px 6px;
+      font-size: 12px;
+      width: 100%;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+
+    .shape-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .shape-btn {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 5px;
+      color: #aaa;
+      padding: 6px 0;
+      cursor: pointer;
+      font-size: 11px;
+      text-align: center;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .shape-btn:hover { background: rgba(255,255,255,0.08); }
+    .shape-btn.active {
+      background: rgba(124,111,247,0.2);
+      border-color: rgba(124,111,247,0.5);
+      color: #a89ff9;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    button.action {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 5px;
+      color: #bbb;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.12s;
+      white-space: nowrap;
+    }
+    button.action:hover { background: rgba(255,255,255,0.1); }
+    button.action.primary {
+      background: rgba(124,111,247,0.15);
+      border-color: rgba(124,111,247,0.3);
+      color: #a89ff9;
+    }
+
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .color-row label { flex: 1; color: #888; font-size: 12px; }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .toggle-row label { flex: 1; color: #888; font-size: 12px; }
+    .toggle-row input[type=checkbox] { accent-color: #7c6ff7; width: 14px; height: 14px; }
+  </style>
+</head>
+<body>
+  <div id="canvas-container">
+    <canvas id="bg"></canvas>
+  </div>
+
+  <button id="toggle-btn" title="Toggle controls">☰</button>
+
+  <div id="panel">
+    <div class="panel-inner">
+
+      <div class="section">
+        <div class="section-title">Shape</div>
+        <div class="shape-grid" id="shape-grid"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Colours</div>
+        <div class="color-row">
+          <label>Background</label>
+          <input type="color" id="c-bg" />
+        </div>
+        <div class="color-row">
+          <label>Shape</label>
+          <input type="color" id="c-shape" />
+        </div>
+        <div class="color-row">
+          <label>Accent</label>
+          <input type="color" id="c-accent" />
+        </div>
+        <div class="toggle-row">
+          <label>Noise colour modulation</label>
+          <input type="checkbox" id="colour-mod" />
+        </div>
+        <select id="palette-select"></select>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Grid</div>
+        <div class="row">
+          <label>Pixel size</label>
+          <input type="range" id="sp-size" min="16" max="256" step="8" />
+          <span class="val" id="sp-size-val"></span>
+        </div>
+        <div class="row">
+          <label>Gap</label>
+          <input type="range" id="grid-gap" min="0" max="16" step="1" />
+          <span class="val" id="grid-gap-val"></span>
+        </div>
+        <div class="row">
+          <label>Fill ratio</label>
+          <input type="range" id="fill-ratio" min="0.5" max="1.0" step="0.01" />
+          <span class="val" id="fill-ratio-val"></span>
+        </div>
+        <select id="tile-sequence">
+          <option value="blankToDense">Sequence: Blank → Dense</option>
+          <option value="denseToBlank">Sequence: Dense → Blank</option>
+          <option value="blankBothEnds">Sequence: Blank both ends</option>
+        </select>
+        <select id="pixel-source">
+          <option value="noise">Source: Noise only</option>
+          <option value="image">Source: Image only</option>
+          <option value="both">Source: Noise + Image</option>
+        </select>
+        <select id="combine-mode">
+          <option value="multiply">Combine: Multiply</option>
+          <option value="average">Combine: Average</option>
+          <option value="add">Combine: Add</option>
+          <option value="min">Combine: Min</option>
+          <option value="max">Combine: Max</option>
+        </select>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Size Thresholds</div>
+        <div style="font-size:10px;color:#555;margin-bottom:8px">Noise value below each slider = that class or lower</div>
+        <div class="row">
+          <label style="font-size:11px">Blank↑8×8</label>
+          <input type="range" id="thresh-1" min="0" max="1" step="0.01" />
+          <span class="val" id="thresh-1-val"></span>
+        </div>
+        <div class="row">
+          <label style="font-size:11px">8×8↑4×4</label>
+          <input type="range" id="thresh-2" min="0" max="1" step="0.01" />
+          <span class="val" id="thresh-2-val"></span>
+        </div>
+        <div class="row">
+          <label style="font-size:11px">4×4↑2×2</label>
+          <input type="range" id="thresh-3" min="0" max="1" step="0.01" />
+          <span class="val" id="thresh-3-val"></span>
+        </div>
+        <div class="row">
+          <label style="font-size:11px">2×2↑1×1</label>
+          <input type="range" id="thresh-4" min="0" max="1" step="0.01" />
+          <span class="val" id="thresh-4-val"></span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Noise</div>
+        <select id="noise-type"></select>
+        <div class="row">
+          <label>Scale</label>
+          <input type="range" id="noise-scale" min="0.5" max="20" step="0.5" />
+          <span class="val" id="noise-scale-val"></span>
+        </div>
+        <div class="row">
+          <label>Speed</label>
+          <input type="range" id="noise-speed" min="0" max="2" step="0.05" />
+          <span class="val" id="noise-speed-val"></span>
+        </div>
+        <div class="row">
+          <label>Scroll X</label>
+          <input type="range" id="scroll-x" min="-2" max="2" step="0.05" />
+          <span class="val" id="scroll-x-val"></span>
+        </div>
+        <div class="row">
+          <label>Scroll Y</label>
+          <input type="range" id="scroll-y" min="-2" max="2" step="0.05" />
+          <span class="val" id="scroll-y-val"></span>
+        </div>
+        <div class="row">
+          <label>Octaves</label>
+          <input type="range" id="octaves" min="1" max="8" step="1" />
+          <span class="val" id="octaves-val"></span>
+        </div>
+        <div class="row">
+          <label>Persistence</label>
+          <input type="range" id="persistence" min="0.1" max="1" step="0.05" />
+          <span class="val" id="persistence-val"></span>
+        </div>
+        <div class="row">
+          <label>Lacunarity</label>
+          <input type="range" id="lacunarity" min="1" max="4" step="0.1" />
+          <span class="val" id="lacunarity-val"></span>
+        </div>
+        <div class="toggle-row">
+          <label>Invert</label>
+          <input type="checkbox" id="noise-invert" />
+        </div>
+        <div class="btn-row">
+          <button class="action" id="randomise-btn">🎲 Randomise seed</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Image</div>
+        <select id="image-mode">
+          <option value="none">Mode: Off</option>
+          <option value="background">Mode: Background</option>
+          <option value="overlay">Mode: Overlay</option>
+        </select>
+        <div class="btn-row">
+          <button class="action" id="image-upload-btn">⬆ Choose image…</button>
+        </div>
+        <input type="file" id="image-file" accept="image/*" style="display:none" />
+        <div class="row">
+          <label>Scale</label>
+          <input type="range" id="image-scale" min="0.1" max="4" step="0.05" />
+          <span class="val" id="image-scale-val"></span>
+        </div>
+        <div class="row">
+          <label>Scroll speed</label>
+          <input type="range" id="image-scroll-speed" min="0" max="2" step="0.01" />
+          <span class="val" id="image-scroll-speed-val"></span>
+        </div>
+        <div class="row">
+          <label>Direction</label>
+          <input type="range" id="image-scroll-angle" min="0" max="360" step="1" />
+          <span class="val" id="image-scroll-angle-val"></span>
+        </div>
+        <div class="row">
+          <label>Opacity</label>
+          <input type="range" id="image-opacity" min="0" max="1" step="0.01" />
+          <span class="val" id="image-opacity-val"></span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Animation</div>
+        <div class="row">
+          <label>Duration</label>
+          <input type="range" id="anim-dur" min="50" max="2000" step="50" />
+          <span class="val" id="anim-dur-val"></span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Controls</div>
+        <div class="btn-row">
+          <button class="action primary" id="play-pause-btn">⏸ Pause</button>
+          <button class="action" id="fullscreen-btn">⛶ Fullscreen</button>
+        </div>
+        <div class="btn-row">
+          <button class="action" id="debug-noise-btn">Show noise layer</button>
+        </div>
+        <div class="btn-row">
+          <button class="action" id="export-btn">↑ Export JSON</button>
+          <button class="action" id="import-btn">↓ Import JSON</button>
+        </div>
+        <input type="file" id="import-file" accept=".json" style="display:none" />
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
