@@ -34,8 +34,8 @@ export class GridLayer {
     this.instanceVbo = null;
     this.instanceData  = null;
     // Per-super-pixel animation state:
-    this._displayClass  = null; // class currently being animated (replaces noiseCache)
-    this._targetClass   = null; // noise-driven desired class
+    this._displayClass  = null; // class currently animating toward
+    this._targetClass   = null; // noise/image-driven desired class
     this._stepStart     = null; // Float32Array — when the current step began (seconds)
     this._stepDuration  = null; // Float32Array — how long each step lasts (animDuration/numSteps)
     this._noisePixels   = null; // exposed so main.js can pass it to NoiseLayer.readPixels
@@ -129,11 +129,11 @@ export class GridLayer {
     const numSP = gridW * gridH;
     this.instanceData  = new Float32Array(numSP * SLOTS_PER_SP * FLOATS_PER_INSTANCE);
     this._noisePixels  = new Uint8Array(gridW * gridH * 4);
-    this._displayClass = new Uint8Array(numSP);   // 0 = blank, updated each completed step
-    this._targetClass  = new Uint8Array(numSP);   // noise-driven desired class
+    this._displayClass  = new Uint8Array(numSP);   // class currently animating toward
+    this._targetClass   = new Uint8Array(numSP);   // pixel-source desired class
     // stepStart initialised far in the past so the first frame fires immediately.
-    this._stepStart    = new Float32Array(numSP).fill(-1e9);
-    this._stepDuration = new Float32Array(numSP).fill(this._animDuration);
+    this._stepStart     = new Float32Array(numSP).fill(-1e9);
+    this._stepDuration  = new Float32Array(numSP).fill(this._animDuration);
     // Instance data is all-zero — all slots inactive; first updateFromSource fades in.
 
     if (!this.vao) {
@@ -218,6 +218,7 @@ export class GridLayer {
     const ox         = spCol * step;
     const oy         = spRow * step;
     const targetHalf = targetN > 0 ? (sp / targetN) * fillRatio * 0.5 : 0;
+    const prevHalf   = prevN   > 0 ? (sp / prevN)   * fillRatio * 0.5 : 0;
     const sizeClass  = Math.max(0, Math.min(1, (newClass - 1) / (NUM_CLASSES - 2)));
 
     const fromBlank = prevClass === 0;
@@ -251,7 +252,16 @@ export class GridLayer {
           const curH  = this.instanceData[bOff + 4] + (this.instanceData[bOff + 5] - this.instanceData[bOff + 4]) * ease;
           const curA  = this.instanceData[bOff + 8] + (this.instanceData[bOff + 9] - this.instanceData[bOff + 8]) * ease;
 
-          if (curH * curA < 0.5 && curA < 0.05) {
+          if (isSplitting) {
+            // Birth circles start at the parent's size/position, visually
+            // replacing the old circle at t=0 — no separate death needed.
+            this.instanceData[dOff + 4]  = 0;
+            this.instanceData[dOff + 5]  = 0;
+            this.instanceData[dOff + 8]  = 0;
+            this.instanceData[dOff + 9]  = 0;
+            this.instanceData[dOff + 10] = stepDur;
+            this.instanceData[dOff + 6]  = time;
+          } else if (curH * curA < 0.5 && curA < 0.05) {
             // Already invisible — nothing to animate away
             this.instanceData[dOff + 4]  = 0;
             this.instanceData[dOff + 5]  = 0;
@@ -261,8 +271,8 @@ export class GridLayer {
             this.instanceData[dOff + 6]  = time;
           } else {
             let tCX, tCY;
-            if (toBlank || isSplitting) {
-              tCX = curCX; tCY = curCY;              // shrink in place
+            if (toBlank) {
+              tCX = curCX; tCY = curCY;              // fade in place
             } else {
               const cCol = Math.floor(col * targetN / prevN);
               const cRow = Math.floor(row * targetN / prevN);
@@ -274,11 +284,11 @@ export class GridLayer {
             this.instanceData[dOff + 2]  = tCX;
             this.instanceData[dOff + 3]  = tCY;
             this.instanceData[dOff + 4]  = curH;
-            this.instanceData[dOff + 5]  = 0;   // shrink to zero
+            this.instanceData[dOff + 5]  = curH; // keep size — only alpha fades
             this.instanceData[dOff + 6]  = time;
             this.instanceData[dOff + 7]  = (prevClass - 1) / (NUM_CLASSES - 2);
             this.instanceData[dOff + 8]  = curA;
-            this.instanceData[dOff + 9]  = 0;   // fade to invisible
+            this.instanceData[dOff + 9]  = 0;    // fade to invisible
             this.instanceData[dOff + 10] = stepDur;
           }
         } else if (prevN > 0) {
@@ -309,16 +319,20 @@ export class GridLayer {
           let fromCX, fromCY, prevH, prevA;
           if (fromBlank) {
             fromCX = cx; fromCY = cy;
-            prevH  = 0; prevA = 0;  // grow and fade in
+            prevH  = 0; prevA = 0;  // fade and grow from nothing
           } else if (isSplitting) {
+            // Start at the parent circle's position AND size, then shrink
+            // outward to the child position/size. No blank gap.
             const pCol = Math.floor(col * prevN / targetN);
             const pRow = Math.floor(row * prevN / targetN);
             fromCX = ox + (pCol + 0.5) * (sp / prevN);
             fromCY = oy + (pRow + 0.5) * (sp / prevN);
-            prevH  = 0; prevA = 1;  // fan out from parent, no alpha fade
+            prevH  = prevHalf; prevA = 1;  // start at parent size
           } else {
+            // Merging: appear at child position, grow from nothing.
+            // (Death circles converge and fade simultaneously.)
             fromCX = cx; fromCY = cy;
-            prevH  = 0; prevA = 1;  // appear in place
+            prevH  = 0; prevA = 1;
           }
 
           this.instanceData[off + 0]  = fromCX;
@@ -388,15 +402,18 @@ export class GridLayer {
         if (noiseTarget !== prevTarget) {
           this._targetClass[spIdx] = noiseTarget;
           if (noiseTarget !== displayCls) {
-            // Spread animDuration evenly across the number of N-ladder steps needed
             const numSteps = this._countSteps(displayCls, noiseTarget);
             this._stepDuration[spIdx] = numSteps > 0
               ? this._animDuration / numSteps
               : this._animDuration;
 
-            // If display was already at prevTarget (at rest), kick off immediately
             if (displayCls === prevTarget) {
+              // At rest — kick off immediately
               this._stepStart[spIdx] = time - this._stepDuration[spIdx];
+            } else {
+              // Mid-animation — reset the step clock so the current step gets
+              // its full duration and nothing fires early due to a stale elapsed.
+              this._stepStart[spIdx] = time;
             }
           }
         }

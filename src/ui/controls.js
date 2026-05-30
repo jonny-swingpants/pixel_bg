@@ -192,7 +192,8 @@ export function initControls(onRebuild, onUniformChange, loadImageSrc) {
   updateSourceBtn();
 
   // Animation
-  slider('anim-dur', 'anim-dur-val', 'animation.duration', v => `${Math.round(v)}ms`);
+  slider('anim-dur', 'anim-dur-val', 'animation.duration', v =>
+    v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${Math.round(v)}ms`);
 
   // Play/Pause
   const ppBtn = el('play-pause-btn');
@@ -266,7 +267,9 @@ function syncAllControls() {
   el('persistence').value = cfg.noise.persistence; el('persistence-val').textContent = cfg.noise.persistence.toFixed(2);
   el('lacunarity').value = cfg.noise.lacunarity; el('lacunarity-val').textContent = cfg.noise.lacunarity.toFixed(1);
   el('noise-invert').checked = cfg.noise.invert;
-  el('anim-dur').value = cfg.animation.duration; el('anim-dur-val').textContent = `${cfg.animation.duration}ms`;
+  el('anim-dur').value = cfg.animation.duration;
+  const d = cfg.animation.duration;
+  el('anim-dur-val').textContent = d >= 1000 ? `${(d/1000).toFixed(1)}s` : `${Math.round(d)}ms`;
 
   ['thresh-1','thresh-2','thresh-3','thresh-4'].forEach((id, i) => {
     const inp = el(id); if (!inp) return;

@@ -57,7 +57,9 @@ function frame(ts) {
 
   // ── Render sources to their FBOs ─────────────────────────────────────────
   if (useNoise) noiseLayer.render(time * cfg.noise.speed, cfg.noise);
-  if (useImage) imageLayer.renderToGrid(gridW, gridH, step, time, cfg.image);
+  // Render image grid FBO if it is a pixel source OR if the review mode needs it.
+  const needImageFBO = (useImage || state.sourceView === 'image' || state.sourceView === 'combined') && imageLayer.ready;
+  if (needImageFBO) imageLayer.renderToGrid(gridW, gridH, step, time, cfg.image);
 
   // ── Solo source-review views (grid hidden) ────────────────────────────────
   const sv = state.sourceView;
@@ -71,12 +73,10 @@ function frame(ts) {
     if (sv === 'noise' && useNoise) {
       noiseLayer.renderDebug(canvasW, canvasH, { alpha: 1.0, greyscale: true });
     } else if (sv === 'image') {
-      imageLayer.readGridPixels(); // ensure FBO is current
       imageLayer.renderDebug(canvasW, canvasH, { alpha: 1.0, greyscale: true });
     } else if (sv === 'combined') {
-      // Show noise as base, green image tint on top — so both layers are visible
       if (useNoise) noiseLayer.renderDebug(canvasW, canvasH, { alpha: 1.0, greyscale: true });
-      if (useImage) imageLayer.renderDebug(canvasW, canvasH, { alpha: 0.5, greyscale: false });
+      if (needImageFBO) imageLayer.renderDebug(canvasW, canvasH, { alpha: 0.5, greyscale: false });
     }
     return;
   }
